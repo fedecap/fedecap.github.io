@@ -1,0 +1,304 @@
+<html>
+<head>
+<script>
+//INFO: "FICHA"=Ficcion Interactiva Con Html y Acciones, motor Fede & Mau
+//ASK: m@mauriciocap.com 
+// Copyright 2015 Mauricio Cappella, Federico Cappella
+
+//USO: genera una historia interactiva en una sola pagina HTML, busca mas abajo "USO:"
+
+//*****************************************************************************
+//S: libreria, mantener siempre igual, GENERAL
+GLOBAL= this;
+
+logm= function (t,l,m,o) { //U: decir por donde vas, que valores conseguiste
+	console.log("LOG:"+t+":"+l+":"+m+":"+(o ? JSON.stringify(o) :""));
+}
+
+anfForTpl= function (src,acc) { //U: convirte texto marcado con {# #} en secciones separadas
+	var r= acc || {};
+	var cnt= 0;	
+	var s= src;
+	var s2="";
+	while(s2!=s) {
+		s2= s;
+		s= s2.replace(/{#([^\s\r\n]*)[ \t]*((?:[^{}\r\n]|{[^#]|[^#]})*)(?:\r\n)?((?:[^{}]|{[^#]|[^#]})*)#}/g, function (m,k,kl,d) { 
+				k= k || ("parte"+cnt++);
+				r[k]=[kl,d]
+				logm("DBG",9,"match '"+k+"' '"+m+"'");
+				return "$"+k+"$";
+			} )
+	}
+	r["main"]=[s]
+	return r;
+}
+
+tpl_gen_js= function (tpl,k) {
+	var src= (tpl).replace(/\$([A-Za-z0-9_]+)\$/g,function (x,k) { return k+'()'; });
+	return '\n'+k+'= function () { var m=""; '+src+'; return m; };\n';
+}
+
+var Tpl;
+tplAFunciones= function (tplSrc) { //U: convierte markup a funciones en javascript
+	var rjs= '';		
+	Tpl= anfForTpl(tplSrc,Tpl);	
+	logm("DBG",1,"srcAFunciones PARTES",Tpl);
+	for (var k in Tpl) { (function (k) { var tpl= Tpl[k];
+		var h= tpl[0];
+		var m= /^([A-Za-z0-9._]+)(.?)(.*)/.exec(h);
+		var genf= m && GLOBAL["tpl_gen_"+m[1]];
+		if (genf) {
+			rjs+=genf(m[2]+m[3]+tpl[1],k);
+		}
+		else {
+			var funf= m && (GLOBAL[m[1]] || Tpl[m[1]]);
+			if (funf) {
+				var pstr= (m[3]+tpl[1]).replace(/\s*$/,"").split(m[2]);
+				var ps= pstr.map(function (p) {
+					var m= /\$([A-Za-z0-9_.]+)\$/.exec(p);
+					return m ? m[1]+"()" : JSON.stringify(p);
+				}).join(",");
+				rjs+='\n'+k+'= function () { return '+m[1]+'('+ps+'); }'; 
+			}
+			else {
+				rjs+='\n'+k+'= function () { var r="ERROR '+k+'"; var args= Array.prototype.slice.call(arguments); try { r= htmlForTxt('+JSON.stringify(h+(tpl[1] ? "\n"+tpl[1] : ""))+').replace(/\\$a([0-9]+)\\$/g,function (x,k) { return args[k]; }).replace(/\\$([A-Za-z0-9_]+)\\$/g,function (x,k) { return GLOBAL[k]() }) } catch (ex) { console.log("EX "+ex); } return r; }';
+			}
+		}
+	})(k)}
+	logm("DBG",1,"srcAFunciones JS",rjs);
+	return rjs;
+}
+
+thisPageSrc= function () { 
+	return "<html><head>"+document.head.innerHTML+"</head><body>"+document.body.innerHTML+"</body></html>";
+}
+
+linkForDownload= function (data,name,desc) {
+	var enc= encodeURIComponent(data);
+	return '<a download="'+name+'" href="data:application/octet-stream,'+enc+'">'+(desc||name)+'</a>';
+}
+
+htmlForTxt= function (src) { //U: agrega marcas html a texto comun tipo wiki
+	return src.replace(/([^\r\n]+)\r?\n/g,function (x,m) { return "<p>"+m+"</p>\n";});
+}
+
+//*****************************************************************************
+//S: libreria, mantener siempre igual, basicos para moverse y dibujar historias
+Fuente= null;
+Vista= null;
+
+Huellas= [];
+mostrar= function (html) { 
+	Vista.innerHTML= html || ""; 
+}
+
+irA= function (pantalla) { 
+	var f= GLOBAL[pantalla];
+	logm("DBG",1,"HISTORIA IR A",{ irA: pantalla, huellas: Huellas, tieneFuncion: f!=null });
+	Huellas.push(pantalla); 
+	mostrar(f()); 
+}
+
+var estado= {}; //U: para guardar como va el juego (items que juntaste, etc.)
+var e= estado; //U: lo mismo que estado,, para que sea corto de escribir
+
+Src= {}
+reiniciar= function () {
+	Vista= document.getElementById('vista');
+	Fuente= document.getElementById('definicionPartes');
+	Guardar= document.getElementById('guardar')
+	Controles= document.getElementById('controles');
+	Fuente.style.height= (window.outerHeight-250)+'px';
+	Fuente.style.width= "100%";
+	Fuente.style.display= "none";
+	Guardar.style.display= "none";
+	Controles.style.display= "none";
+	var s= Fuente.value.replace("&gt;",">").replace("&lt;","<");
+	Fuente.innerHTML= Fuente.value;
+	var js= tplAFunciones(s);
+	console.log(js);
+	eval(js);
+	irA(GLOBAL["inicio"] ? "inicio" : "main"); 
+}
+
+editar= function () {
+	Fuente.style.display= "inline";
+}
+
+guardar= function () {
+	Guardar.innerHTML='';
+	Vista.innerHTML='';
+	Fuente.innerHTML= Fuente.value;
+	Guardar.innerHTML="Hace click y guarda "+linkForDownload(thisPageSrc(),"game.html");
+	Guardar.style.display= "block";
+}
+
+window.onload= function () { 
+	reiniciar(); 
+	document.onkeydown= function (e) {
+		var x= e.which || e.keyCode;
+		console.log("E: "+x+" "+e.ctrlKey);
+		if (x=="E".charCodeAt(0) && e.ctrlKey) {
+			Controles.style.display= "block";
+			e.preventDefault();
+		}
+	};
+}
+
+//*****************************************************************************
+//S: estilos, podes agrega otros
+link= function (nombreFuncion,txt) {
+	return '<a href="#" onclick="irA(\''+nombreFuncion+'\')">'+(txt||nombreFuncion)+'</a>'; 
+}
+linkPrevia= function () { return link(Huellas[Huellas.length-2],"anterior") };
+hackVerEstado= function () { return "<pre>"+JSON.stringify(estado,null,2)+"</pre>"+linkPrevia(); }
+navegarNueva= function (link,opciones) { window.open(link,"_blank",opciones); return ""; }
+navegarEsta= function (link,opciones) { window.open(link); }
+
+/* 
+	USO: definis una funcion como "rojo", si pones {# rojo mi texto #} se convierte en rojo("mi texto")
+	La funcion puede hacer lo que quieras, ej modificar el estado, conectarse a otros sitio, etc.
+	Lo que devuelva con "return", se agrega a lo que se muestra, asi que podes poner HTML como en este ejemplo
+	OJO! si es solo html, es mas facil definirla como un pedazo de historia mas abajo (busca rojo y rickVideo
+	Pero se pueden hacer cosas bastante complicadas como navegarNueva, etc.
+*/
+	
+</script></head><body>
+<div id="guardar" style="float: right; background: #4fa; padding: 1em;"></div>
+<div id="controles" style="display: none; background: #ddd; padding: 1em;">
+<a href="#" onclick="editar()">Editar</a>
+<a href="#" onclick="guardar()">Link para Guardar</a>
+<a href="#" onclick="reiniciar()">Reiniciar</a>
+</div>
+<div id="vista"></div>
+<textarea id="definicionPartes" style="display: none;">
+Lo que esta entre {# y #} se covierte en una funcion. Si escribis algo pegado al primer # la funcion se llama asi. Sino le pone un nombre tipo parte11. Podes ver Y usar las funciones donde quieras, ej. en la consola del navegador.
+
+{#inicio
+Hola! Las instrucciones estan en el codigo fuente de la pagina :)
+Busca {# rojo #inicio #} para encontrar como se definio este {# rojo texto #}
+La herramienta convierte lo que esta entre { # y # } en funciones javascript! (lo que pongas pegado al primer # es el nombre de la funcion)
+Asi podes manipular todo desde la consola mientras probas (en Chrome se abre con Ctrl+Shift+J )
+Si probas {# consola inicio #} vas a ver el codigo para generar esta pantalla.
+Si probas {# consola inicio() #} vas a ver el html de esta pantalla.
+Si probas {# consola irA("inicio") #} vas a venir a esta pantalla.
+
+Esto es {# gris:un texto gris #} porque le aplique una plantilla que se llama #gris
+
+{# link ejGenerarCodigo #} {# link ejJuego #}
+
+#}
+
+------------------------------------------------------------------------------
+Podes definir plantillas de html (o lo que quieras!) simplemente poniendoles nombre y usando $a0$ $a1$ etc. donde deben aparecer los parametros
+
+{#gris <b style="background: #ddd;">$a0$</b> #}
+{#rojo <b style="color: red;">$a0$</b> #}
+{#verde <b style="color: green;">$a0$</b> #}
+{#consola en la <b>consola </b><span style="font-family: monospace; background: #eee; border: 1px dotted black; border-radius: 3px; padding: 2px;">$a0$</span> #}
+
+------------------------------------------------------------------------------
+Podes armar cosas mas complicadas, con solo copiar o marcar en codigo que te robaste de la web :)
+
+Este muestra primero un cartelito y despues la foto de Rick Astley
+{#rick 
+{# js alert("me pudri te lo muestro a rick"); #} 
+<img src="http://img1.wikia.nocookie.net/__cb20130318151721/epicrapbattlesofhistory/images/6/6d/Rick-astley.jpg"> 
+#}
+
+Este muestra primero un video de Rick embebido en la pantalla
+{#rickVideoEmbebido <iframe width="560" height="315" src="https://www.youtube.com/embed/Rqz--Rf6IIo?rel=0&autoplay=0" frameborder="0" allowfullscreen></iframe> #}
+
+Este abre una ventana nueva con el video de rick :)
+{#rickVentanaNueva (mira rick) {# navegarNueva https://www.youtube.com/embed/Rqz--Rf6IIo?rel=0&autoplay=1 #} #}
+
+------------------------------------------------------------------------------
+Podes definir plantillas que usas en mas de un lado, donde escribis $nombreFuncion$ va a aparecer el resultado de llamar la funcion.
+
+{#botones {# link pelear #} {# link otra1 #} {# link otra2 #} {# linkPrevia #} #}
+
+------------------------------------------------------------------------------
+Con todo eso podes generar cualquier cosa :) Html, codigo, texto, historias interactivas :)
+
+Ponele que defino una plantilla para un pedazo de codigo (una "macro")
+{#eachKv for (var $a1$ in $a0$) { var $a2$=$a0$[$a1$]; $a3$ } #}
+
+{#ejGenerarCodigo 
+	Puedo usar el esquema de plantillas para generar codigo	
+
+	Llamando una plantilla como funcion
+	{# gris {# eachKv|miDiccionario|clave|valor|console.log("clave="+clave+" valor="+valor) #} #}
+
+	Que puede tener otras plantillas como parametro
+	{# gris {# eachKv|miDiccionario|clave|valor|$cuerpoCiclo$ #} #}
+#}
+
+{#cuerpoCiclo 
+	console.log("clave="+clave+" valor="+valor); 
+	hacerAlgo(clave,valor);
+#}
+
+------------------------------------------------------------------------------
+{#ejJuego
+	Se pueden hacer juegos de ficcion interactiva, tipo "Elije tu Propia Aventura" o mas complicados!
+
+	{# link|inicioJuego|Empezar un partido #} 
+#}
+
+{#inicioJuego
+
+	Por ejemplo, al iniciar el juego, ademas de contar donde empieza, ponemos variables en su estado inicial.
+
+	Esta todo oscuro, de golpe alguien te empuja...
+	{# js e.vecesLuz=0; e.tengoEspada= false; #}
+	Podes {# link pelear #} o {# link|luzEncender|encender la luz #}
+#}
+
+En las pantallas podes usar javascript para decidir que mostras, actualizar estado, etc.
+{#pelear
+	{# js m= e.tengoEspada ? 
+			{# Empieza el combate, las espadas sacan chispas #} : 
+			{# No tenes espada, salis corriendo {# link|agarrarEspada|a buscar una espada #} #} 
+	#}
+
+	Pero no se ve mucho, podes {# link|luzEncender|encender la luz #}
+
+#}
+
+{#agarrarEspada 
+	Tanteas por todos lados, te llevas por delante algunos muebles.
+	Finalmente logras agarrar la espada! {# js e.tengoEspada=true; #}
+
+	Podes {# link|pelear #} o {# link|luzEncender|encender la luz #}
+#}	
+
+{#luzEncender 
+
+	{# js if (e.vecesLuz++<3) { m={#
+			Encendes la luz, pero no ves a nadie :P
+
+			Podes {# link|luzApagar|apagar la luz#} {# js if (e.tengoEspada) { m={# o {# link|dejarEspada|dejar la espada #} que pesa mucho, mucho  #} } #} 
+			#} } else { m={#
+				Encendes la luz, ves una persona que te parece conocer...
+				Casi {# link|verPersona|sabes quien es... #} 
+			#} }
+	#}
+
+#}
+
+{#luzApagar
+	Apagas la luz. De nuevo esta todo oscuro.
+	Otra vez sentis que alguien te empuja...
+
+	Podes {# link|pelear #} o {# link|luzEncender|encender la luz #}
+#}
+
+{#verPersona
+
+	$rickVentanaNueva$	
+
+	{# link|inicioJuego|Empezar otro partido #} 
+#}
+</textarea>
+</body>
+</html>
