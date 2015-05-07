@@ -112,7 +112,7 @@ reiniciar= function () {
 	Fuente.style.width= "100%";
 	Fuente.style.display= "none";
 	Guardar.style.display= "none";
-	Controles.style.display= "none";
+	if (location.hash!="#editar") { Controles.style.display= "none"; }
 	var s= Fuente.value.replace("&gt;",">").replace("&lt;","<");
 	Fuente.innerHTML= Fuente.value;
 	var js= tplAFunciones(s);
@@ -133,16 +133,23 @@ guardar= function () {
 	Guardar.style.display= "block";
 }
 
+mostrarControles= function () {
+			Controles.style.display= "block";
+}
+
 window.onload= function () { 
 	reiniciar(); 
 	document.onkeydown= function (e) {
 		var x= e.which || e.keyCode;
 		console.log("E: "+x+" "+e.ctrlKey);
 		if (x=="E".charCodeAt(0) && e.ctrlKey) {
-			Controles.style.display= "block";
+			mostrarControles();
 			e.preventDefault();
 		}
 	};
+	if (location.hash="#editar") {
+		mostrarControles();
+	}
 }
 
 //*****************************************************************************
